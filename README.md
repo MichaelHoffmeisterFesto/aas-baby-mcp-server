@@ -3,7 +3,8 @@ This is a sandbox MCP server in python trying out to play with AAS.
 
 ## Credits
 The initial scripts were taken from https://github.com/kirillsaidov/ollama-mcp-example
-Thanks for giving this help!
+
+Thanks for providing this nice starting point!
 
 ## Important command lines
 
