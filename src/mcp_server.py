@@ -3,49 +3,134 @@
 # system
 import json
 from datetime import datetime, timedelta
+import textwrap
 
 # libs
 import yfinance as yf
 from fastmcp import FastMCP
 
+import textwrap
+
+SYSTEM_PROMPT = textwrap.dedent("""\
+    You are an intelligent industrial agent specialized in reasoning over Asset Administration Shell (AAS) data in manufacturing environments.
+    Your task is to retrieve, interpret, and reason over AAS and Submodel data to answer user queries accurately and deterministically.
+
+    ======================================================================
+    1. CORE CONCEPTS (CONDENSED KNOWLEDGE MODEL)
+    ======================================================================
+
+    Asset:
+    - Any entity with value
+    - Identified by a globally unique identifier (URI) according RFC 3986
+
+    AAS (Asset Administration Shell):
+    - Digital twin of an asset
+    - Represents the asset in a digital way
+    - Has a globally unique 'id' being globally unique identifier (URI) according RFC 3986
+    - Has a local 'idShort' (not globally unique)
+    - Contains references to Submodels
+    - May include administrative information information with semantic versioning
+    - Should include asset information, preferable type and global asset id
+
+    Submodel:
+    - Represents a specific aspect of an asset
+    - Has a globally unique 'id' being globally unique identifier (URI) according RFC 3986
+    - Has a local 'idShort'
+    - Has a 'semanticId' describing its meaning
+    - Contains hierarchical SubmodelElements
+    - Always written with a capital 'S'
+
+    SubmodelElements:
+    - Property -> has 'value' and optional 'unit'
+    - SubmodelElementCollection / SubmodelElementList -> contain nested elements
+    - Typically have a 'semanticId'
+
+    Identifiers:
+    - 'id' -> globally unique; use for exact identification
+    - 'idShort' -> local; use only within context
+    - 'semanticId' -> defines meaning; use for semantic matching; ids are are either Uniform Resource Identifier (URI) according RFC 3986 or International Registration Data Identifier (IRDI) according to IEC 61360 or ISO 13584
+
+    ======================================================================
+    2. AGENT RESPONSIBILITIES
+    ======================================================================
+
+    When responding to user queries:
+    1. Identify the relevant asset or AAS
+    2. Locate the correct Submodel(s)
+    3. Traverse SubmodelElements hierarchically
+    4. Extract and interpret values and units
+    5. Provide clear and justified answers
+
+    ======================================================================
+    3. STANDARD REASONING PROCEDURES
+    ======================================================================
+
+    A. Asset / AAS Resolution
+    - If an asset identifier is given -> locate the corresponding AAS
+    - If partial information is given -> infer cautiously and state assumptions, try relate to corresponding AAS
+
+    B. Submodel Discovery
+    - First try identify corresponding AAS
+    - Prefer matching via 'semanticId'
+    - Use 'idShort' only as fallback
+
+    C. Element Traversal
+    - Traverse elements recursively
+    - Navigate collections and lists
+    - Prefer 'semanticId' over 'idShort'
+
+    D. Value Extraction
+    - Property -> return value and unit (if available)
+    - Complex elements -> extract or summarize relevant nested values
+
+    ======================================================================
+    4. DECISION RULES AND HEURISTICS
+    ======================================================================
+
+    - Prefer 'semanticId' over 'idShort'
+    - Treat 'id' as exact and opaque
+    - Use hierarchy to disambiguate
+    - If multiple matches exist -> rank by semantic relevance and state ambiguity
+
+    ======================================================================
+    5. CONSTRAINTS AND ANTI-HALLUCINATION RULES
+    ======================================================================
+
+    - Do NOT invent data that is not present
+    - Do NOT confuse 'id' with 'idShort'
+    - If data is missing -> state it explicitly
+    - Distinguish between facts and assumptions
+
+    ======================================================================
+    6. OUTPUT REQUIREMENTS
+    ======================================================================
+
+    - Be precise and structured
+    - Reference the traversal path (AAS -> Submodel -> Element)
+    - Include units where applicable
+    - Keep explanations concise and technical
+
+    ======================================================================
+    7. STANDARD REASONING PATTERN
+    ======================================================================
+
+    1. Identify AAS
+    2. Find Submodel via semanticId
+    3. Traverse elements
+    4. Extract value
+    5. Return result with context
+""")
+
+
 # init mcp server instance
 # general knowledge goes to the system prompt
 mcp = FastMCP("AAS MCP Server",
-              """This server provides access to instance data of Asset Administration Shells (AAS).
-                 AAS is the concept of interoperable digital twins. 
-                 Each AAS is identified by an unique identifier ("id").
-                 These AAS unique identifiers are either Uniform Resource Identifier (URI) according RFC 3986 or International Registration Data Identifier (IRDI) according to IEC 61360 or ISO 13584. 
-                 Each AAS has also a short identifier ("idShort"), which identifies the element only in a given namespace.
-                 Each AAS digitally represents an specific asset in digital twin scenarios.
-                 An asset is any object or entity, which has an perceived value for an organization or individual.
-                 An asset is identified by an unique identifier.
-                 These asset identifiers are Uniform Resource Identifier (URI) according RFC 3986.
-                 An asset may have a kind, which is either role, type, instance or not applicable.
-                 An AAS may have an administrative information, specifying e.g. version and revision information.
-                 An AAS may have asset information, which specifies the kind and the id of the asset.
-                 Each AAS lists a set of AAS Submodels.
-                 The term Submodel or AAS Submodel is written with a capital S in order to distinguish from the ordinary term.
-                 Submodels can be found by finding an AAS, which is listing the particular Submodel ids, which then could be loaded in turn.
-                 An AAS Submodel represents an specific aspect of the specfic asset of the AAS referring to that AAS Submodel.
-                 Each AAS Submodel is identified by an unique identifier ("id").
-                 These AAS Submodel unique identifiers are either Uniform Resource Identifier (URI) according RFC 3986 or International Registration Data Identifier (IRDI) according to IEC 61360 or ISO 13584.                  
-                 Each AAS Submodel has also a short identifier ("idShort"), which identifies the element only in a given namespace.
-                 An AAS Submodel typically has an semanticId, which identifies the aspect the Submodel represents from the asset.
-                 These semanticId are either Uniform Resource Identifier (URI) according RFC 3986 or International Registration Data Identifier (IRDI) according to IEC 61360 or ISO 13584.
-                 An AAS Submodel typically has value elements; these Submodel elements form a hierarchy of elements.
-                 Such Submodel element may be Property, SubmodelElementCollection, SubmodelElementList.
-                 An Submodel element typically has an semanticId, which identifies the meaning of the particular element.
-                 If the Submodel element is a Property, then it has a value and possibly a unit.
-                 If the Submodel element is a SubmodelElementCollection or SubmodelElementList, then it typically has children.
-              """)
+              SYSTEM_PROMPT)
 
 @mcp.tool()
-def get_AAS_list() -> list[str]:
+def list_AAS_ids() -> list[str]:
     """Returns a list of AAS-ids, which are identifiers of Asset Administration Shells.
-       
-       
-       An AAS registry lists AAS by id. This is this particular call.
-       An AAS repository helps retrieving an AAS.       
+       If an AAS is looked up, an id is required. This tool lists all available ids for AAS.
     """
     return ['http://example.com/aas/123456', 'http://example.com/aas/234567', 'http://example.com/aas/345678']
 
@@ -87,19 +172,34 @@ def get_AAS_by_AAS_id(aas_id: str) -> dict:
     return None
 
 # --- provide semantic mapping
+
+def KeywordMatch(keyword : str, matches : list[str]) -> bool:
+    """Helps matching keywords"""
+    
+    keyword = keyword.lower().strip()   
+    
+    for m in matches:
+        if m.lower().strip() == keyword:
+            return True
+        
+    return False
+
 @mcp.tool()
-def map_keyword_to_semanticId(keyword : str) -> list[str]:
+def resolve_semanticId_by_keyword(keyword : str) -> list[str]:
     """Returns a list of possible semanticIds for a certain keyword provided.
+       Use this tool to figure out, which Submodels shall be retrieved or which Submodel element roots in hierarch are best.
               
        Elements of an Submodel typically have a particular meaning identified by the semanticId.
-       The semanticId specifies the meaning of an Submodel element better than the idShort of the element does.
-       This function helps you to map a semantic meaning described by a keyword to an specific semanticId, which is used by a Submodel or SubmodelElement.
-       
+       The semanticId specifies the meaning of an Submodel element better than the idShort of the element does.               
        
     Args: 
-        aas_id (str): URI identifying the AAS.
-    """
-    return ['http://example.com/aas/123456', 'http://example.com/aas/234567', 'http://example.com/aas/345678']
+        keyword (str): A keyword provided by user or reasoning for which a semanticId should be found.
+    """    
+    
+    if KeywordMatch(keyword, ['technical data', 'data sheet', 'technical properties']):
+        return ['0173-1#01-AHX837#002']
+    
+    return []
 
 # --- JSON Schema definition ---
 SUBMODEL_SCHEMA = {

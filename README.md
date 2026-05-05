@@ -26,3 +26,17 @@ Start Client
 python3.exe .\mcp_client.py
 ```
 
+## Naming conventions of tools
+
+According ChatGPT:
+
+Encode the operation type explicitly
+
+You want a small, consistent verb taxonomy. For MCP agents, these usually work best:
+
+* fetch_ → direct retrieval by ID (deterministic)
+* list_ → enumerate collections
+* search_ → fuzzy or filtered lookup
+* resolve_ → indirect lookup (e.g., asset → AAS)
+* traverse_ → navigate hierarchical structures
+
